@@ -1,0 +1,286 @@
+﻿
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title></title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+    <h2>Чат-комната</h2>
+    <div class="main">
+        <div id="loginBlock">
+            <p>Введите логин:</p><br />
+            <input id="login" type="text" class="form-control" /><br />
+            <input id="btnLogin" type="button" value="Войти" class="btn btn-default" />
+            <p id="error-message" style="color: red; display: none;">Логин не найден!</p>
+            <p><a href="#" id="showReg">Вы еще не зарегистрированы?</a></p>
+        </div>
+        <div id="regBlock" style="display: none;">
+            <p>Введите логин:</p><br />
+            <input id="reg" type="text" class="form-control" /><br />
+            <p>Введите email:</p><br />
+            <input id="email" type="text" class="form-control" /><br />
+            <input id="btnReg" type="button" value="Зарегистрироваться" class="btn btn-default" />
+            <p id="reg-error-message" style="color: red; display: none;">Ошибка регистрации!</p>
+        </div>
+        <div id="chatBody" style="display: none;">
+            <div id="header" style="font-weight:bold"></div>
+            <div id="inputForm">
+                <input type="text" id="message" class="form-control" />
+                <input type="button" id="sendmessage" value="Отправить" class="btn btn-default" />
+            </div>
+            <div id="chatroom"></div>
+
+            <div>
+                <p><b>Все пользователи:</b></p>
+                <ul id="chatusers"></ul>
+            </div>
+            <p><b>Ранее в чате:</b></p>
+            <div id="messageBlock" style="background-color: lightskyblue; border-radius:10px;"><p></p>></div>
+
+        </div>
+        <input id="hdId" type="hidden" />
+        <input id="username" type="hidden" />
+        <button id="closeBtn">&times;</button>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.4.min.js" integrity="sha256-oP6HI9z1XaZNBrJURtCoUT5SUnxFr8s3BzRl+cbzUq8=" crossorigin="anonymous"></script>
+    <script>
+        $(function () {
+            $('#chatBody').hide();
+            $('#loginBlock').show();
+
+            const hubConnection = new signalR.HubConnectionBuilder()
+                .withUrl("/chat")
+                .build();
+
+            hubConnection.start()
+                .then(function () {
+                    console.log("SignalR connection ok");
+                })
+                .catch(function (err) {
+                    console.error("SignalR connection error:", err);
+                });
+
+            $('#showReg').click(function () {
+                $('#loginBlock').hide();
+                $('#regBlock').show();
+            });
+
+    // Проверка формата email
+    function isValidEmail(email) {
+        const emailPattern = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+        return emailPattern.test(email);
+    }
+
+            $('#btnReg').click(function () {
+                const loginName = $('#reg').val();
+                const email = $('#email').val();
+        // Проверка формата email
+        if (!isValidEmail(email)) {
+            $('#reg-error-message').text('Некорректный формат email!').show();
+            return;
+        }
+                if (!login || !email) {
+                    $('#reg-error-message').text('Пожалуйста, заполните все поля').show();
+                    return;
+                }
+                hubConnection.invoke("RegisterUser", loginName, email)
+                    .catch(function (err) {
+                        console.error(err.toString());
+                    });
+            });
+
+
+            hubConnection.on("LoginSuccessful", function (userId, login, messages) {
+                console.log("Login:", login);
+                $('#loginBlock').hide();
+                $('#chatBody').show();
+
+                $('#messageBlock').empty();
+                messages.forEach(function (message) {
+                    addMesToBlock(message.user.login, message.message, message.date)
+                });
+
+              
+            });
+
+
+
+            hubConnection.on("LoginFailed", function (message) {
+                $('#error-message').text("Логин не найден! Зарегистрируйтесь").show();
+                alert("Логин не найден! Зарегистрируйтесь");
+                $('#regBlock').show();
+            });
+
+
+
+
+            hubConnection.on("RegistrationSuccessful", function (userId, login) {
+
+                alert("Вы успешно зарегистрированы!");
+                $('#reg').val('');
+                $('#error-message').hide();
+                $('#regBlock').hide();
+                $('#loginBlock').show();
+            });
+
+            hubConnection.on("RegistrationFailed", function (message) {
+                $('#reg-error-message').text("Такой логин или емейл уже существует").show();
+            });
+
+            // Кодирование тегов
+            function htmlEncode(value) {
+                return $('<div />').text(value).html();
+            }
+
+            function AddUser(id, name) {
+                console.log("Adding user:", id, name);
+                $('#chatusers').append('<li data-id="' + id + '">' + htmlEncode(name) + '</li>');
+            }
+
+           
+   
+            hubConnection.on("AddMessage", function (name, message) {
+                // Добавление сообщений на веб-страницу
+                $('#chatroom').append('<p><b>' + htmlEncode(name)
+                    + '</b> <i>' + htmlEncode(message) + '</i></p>');
+            });
+
+
+
+            // Загрузка сообщений
+            hubConnection.on("LoadMes", function (messages) {
+                console.log("prev.mes:", messages);
+                $('#messageBlock').empty();
+                messages.forEach(function (message) {
+            const currentUser = $('#username').val(); // Получаем логин пользователя
+            const messageClass = message.login === currentUser ? 'right' : 'left';//для стиля поместить сообщение вправо-влево
+                    const formatDate = new Date(message.date).toLocaleString("ru-RU", {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+            addMesToBlock(message.login, message.mes, formatDate, messageClass);
+                });
+                // messages.forEach(function (message) {
+                //     addMesToBlock(message.login, message.mes, message.date);
+                // });
+            });
+    function addMesToBlock(login, message, date, messageClass) {
+        $('#messageBlock').append(`<div class="message-frame ${messageClass}">
+        <div><strong>${login}</strong>:<br> ${message}<br> <span class="date">${date}</span></div>
+    `);
+    }
+
+
+            // Подключение нового пользователя
+            hubConnection.on("Connected", function (id, userName, allUsers) {
+                console.log("UserName: ", userName);
+                console.log("All Users: ", allUsers);
+
+                // Установка имени и id текущего пользователя
+                $('#hdId').val(id);
+                $('#username').val(userName);
+                $('#loginBlock').hide();
+                $('#chatBody').show();
+                $('#header').html('<h3>Добро пожаловать, ' + userName + '</h3>');
+
+                // Добавление всех пользователей
+                for (i = 0; i < allUsers.length; i++) {
+
+                    AddUser(allUsers[i].connectionId, allUsers[i].name);
+                }
+            });
+            // Функция, вызываемая сервером для добавления нового пользователя
+            hubConnection.on("NewUserConnected", function (id, name) {
+
+                AddUser(id, name);
+            });
+
+
+
+            hubConnection.on("AddMessage", function (login, message, date) {
+                if (login && message) {
+                    addMesToBlock(login, message, date);
+                } else {
+                    console.log("Отсутствуют логин или сообщение");
+                }
+            });
+
+
+            $('#btnLogin').click(function () {
+                const loginName = $('#login').val();
+                hubConnection.invoke("Connect", loginName)
+                    .catch(function (err) {
+                        console.error(err.toString());
+                    });
+                if (login) {
+
+                    hubConnection.invoke("CheckLogin", login)
+                        .catch(function (err) {
+                            console.error(err.toString());
+                        });
+                } else {
+                    console.error("Поле логина пустое");
+                }
+            });
+
+
+            // Отправка сообщения
+            $('#sendmessage').click(function () {
+                let username = $('#username').val();
+                let message = $('#message').val();
+                let date = new Date().toISOString();
+
+                if (username && message) {
+                    hubConnection.invoke("Send", username, message, date)
+                        .then(function () {
+                            $('#message').val('');//очистка инпута
+                        })
+
+                        .catch(function (err) {
+                            return console.error(err.toString());
+                        });
+                } else {
+                    console.log("Отсутствуют логин или сообщение");
+                }
+            });
+
+            // Отключение пользователя
+            hubConnection.on("UserDisconnected", function (id, userName) {
+                $('#chatusers li[data-id="' + id + '"]').remove();
+            });
+
+            // $('#closeBtn').click(function () {
+            //     window.close(); // Закрываем окно
+            // });
+
+            $('#closeBtn').click(function () {
+
+                hubConnection.invoke("Exit")
+                    .then(function () {
+
+                        window.close();
+                    })
+                    .catch(function (err) {
+                        console.error("Ошибка при отключении пользователя:", err.toString());
+                    });
+            });
+
+        });
+    </script>
+
+</body>
+
+</html>
+
+
+
+
+
